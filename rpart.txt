@@ -1,0 +1,163 @@
+> ##################### setup environment  ######################
+> 
+> # setup libraries
+> if (!require(lattice)) {install.packages("lattice"); library(lattice)}
+> if (!require(NLP)) {install.packages("NLP"); library(NLP)}
+> if (!require(topicmodels)) {install.packages("topicmodels"); library(topicmodels)}
+> if (!require(tm)) {install.packages("tm"); library(tm)}
+> if (!require(slam)) {install.packages("slam"); library(slam)}
+> 
+> ##################### input the data  ######################
+> 
+> ## read in the data
+> 
+> library(readr)
+> yelp.raw = read.csv("yelp_academic_dataset_review_train.csv", header = TRUE)
+> dim(yelp.raw)
+[1] 116474     11
+> set.seed(123)
+> rs = sample(1:116474, size = 116474/4, replace = F)
+> yelp = yelp.raw[-rs, ]
+> test = yelp.raw[rs, ]
+> 
+> ## make modifications to the dataset
+> 
+> # copy of the data
+> #yelp = read.csv("data.csv")
+> 
+> # change data formats
+> yelp$business_id=as.factor(yelp$business_id)  # change from strings to factors -- easier to find common businesses
+> yelp$user_id=as.factor(yelp$user_id)  # change from strings to factors
+> 
+> ## transform customer reviews into a tm structure that can be used for topic modeling
+> 
+> # first turn the reviews which are strings into words (or tokens)
+> creviews = VCorpus(VectorSource(yelp$text))
+> meta(creviews,"business_id")=yelp$business_id   # save the business_id
+> meta(creviews,"user_id")=yelp$user_id   # save the user_id
+> writeLines(as.character(creviews[1]))  # print specific review
+list(list(content = "I almost got sick on all of the chocolate coffee beans in this place, they are so good.  I sat outside and had a great conversation about the direction music is taking in this day in age.  If you don't follow a formula it seems that you can't get a record contract, even in the indie scene.  As you can tell, I thoroughly enjoyed the crowd here.  \n\nInside there is a bar opposite the coffee line with Creative Loafing and other local newspapers to read, as well as chocolate coffee beans in little quarter machines.  Don't mix these with a strong cup of coffee or you will be jumping off the walls.", 
+    meta = list(author = character(0), datetimestamp = list(sec = 19.4937300682068, min = 33, hour = 6, mday = 4, mon = 4, year = 117, wday = 4, yday = 123, isdst = 0), description = character(0), heading = character(0), id = "1", language = "en", origin = character(0))))
+list()
+list(business_id = 848, user_id = 134)
+> 
+> # second let's modify the reviews (removal of certain words)
+> creviews = tm_map(creviews,stripWhitespace)  # remove extra whitespace
+> creviews = tm_map(creviews,content_transformer(tolower))  # convert all to lower case
+> creviews = tm_map(creviews,removeWords,stopwords("english"))  # remove common english words
+> creviews = tm_map(creviews,removeNumbers)  # remove numbers
+> creviews = tm_map(creviews,removePunctuation)  # remove symbols
+> writeLines(as.character(creviews[1]))  # print specific review after transforms
+list(list(content = " almost got sick     chocolate coffee beans   place    good  sat outside    great conversation   direction music  taking   day  age    follow  formula  seems    get  record contract even   indie scene   can tell  thoroughly enjoyed  crowd  inside    bar opposite  coffee line  creative loafing   local newspapers  read  well  chocolate coffee beans  little quarter machines  mix    strong cup  coffee   will  jumping   walls", meta = list(author = character(0), datetimestamp = list(
+    sec = 19.4937300682068, min = 33, hour = 6, mday = 4, mon = 4, year = 117, wday = 4, yday = 123, isdst = 0), description = character(0), heading = character(0), id = "1", language = "en", origin = character(0))))
+list()
+list(business_id = 848, user_id = 134)
+> 
+> # third let's create a term-document matrix (e.g., count # of times word used)
+> tmcreviews = DocumentTermMatrix(creviews)
+> dim(tmcreviews)   # notice that we have one row for each user review, and one column for each word
+[1] 87356 69715
+> inspect(tmcreviews[1:10,c("amazing","happy","indian","food")])  # print out word counts for the first 10 users for four specific words
+<<DocumentTermMatrix (documents: 10, terms: 4)>>
+Non-/sparse entries: 3/37
+Sparsity           : 92%
+Maximal term length: 7
+Weighting          : term frequency (tf)
+Sample             :
+    Terms
+Docs amazing food happy indian
+  1        0    0     0      0
+  10       1    0     0      0
+  2        0    0     0      0
+  3        0    0     0      0
+  4        0    0     0      0
+  5        0    0     0      0
+  6        0    1     0      0
+  7        0    0     0      1
+  8        0    0     0      0
+  9        0    0     0      0
+> 
+> # fourth let's only get the words that are common (alternative could use removeSparseTerms(tmreviews,0.2))
+> shorttermlist=findFreqTerms(tmcreviews,500)  # let's find words that are used 500 times or more
+> mcterms = tmcreviews[,shorttermlist]  # let's create another term matrix with just common words
+> dim(mcterms)   # notice now we have the same number of rows but only 1984 columns (just frequent words)
+[1] 87356  1298
+> wordcount=apply(mcterms,1,sum)   # count the number words in reviews (the '1' tells R to sum each row or user)
+> summary(wordcount)  # summary of the users
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   0.00   17.00   29.00   38.82   50.00  353.00 
+> wordcount.index = wordcount>10
+> mcterms = mcterms[wordcount.index,]   # let's only keep user reviews that have at least 10 words
+> dim(mcterms)   # notice that now we only have 109929 reviews
+[1] 79985  1298
+> y = yelp$stars[wordcount.index]
+> mcterms = as.matrix(mcterms)
+> mcterms = as.data.frame(mcterms)
+> mcterms = cbind(mcterms, y)
+> dim(mcterms)
+[1] 79985  1299
+> 
+> 
+> test$business_id=as.factor(test$business_id)  
+> test$user_id=as.factor(test$user_id)
+> 
+> test.creviews = VCorpus(VectorSource(test$text))
+> meta(test.creviews,"business_id")=test$business_id   # save the business_id
+> meta(test.creviews,"user_id")=test$user_id   # save the user_id
+> writeLines(as.character(test.creviews[1]))  # print specific review
+list(list(content = "So me and the kids stop here on a layover.  I should have read the previous reviews.  You know you are in financial trouble when a cheese quesadilla is $7.39.  My daughter gets street tacos, conveniently made from tortillas the size of a hockey puck.  I have a burrito that is 80% refried beans and tortilla.  Spanish rice is dry and flavorless.  Aforementioned refritos are a watery paste, seemingly acquired from the same taste factory as the rice.  Lady calling the orders as ready appears to have been a voice actor in the upcoming \"Unintelligible Helium Chihuahua Power Rangers\" release.  The tortillas are decent, but everything else was a bust.", 
+    meta = list(author = character(0), datetimestamp = list(sec = 6.6805899143219, min = 37, hour = 6, mday = 4, mon = 4, year = 117, wday = 4, yday = 123, isdst = 0), description = character(0), heading = character(0), id = "1", language = "en", origin = character(0))))
+list()
+list(business_id = 1800, user_id = 64036)
+> 
+> test.creviews = tm_map(test.creviews,stripWhitespace)  # remove extra whitespace
+> test.creviews = tm_map(test.creviews,content_transformer(tolower))  # convert all to lower case
+> test.creviews = tm_map(test.creviews,removeWords,stopwords("english"))  # remove common english words
+> test.creviews = tm_map(test.creviews,removeNumbers)  # remove numbers
+> test.creviews = tm_map(test.creviews,removePunctuation)  # remove symbols
+> writeLines(as.character(test.creviews[1])) 
+list(list(content = "    kids stop    layover    read  previous reviews  know    financial trouble   cheese quesadilla    daughter gets street tacos conveniently made  tortillas  size   hockey puck    burrito    refried beans  tortilla spanish rice  dry  flavorless aforementioned refritos   watery paste seemingly acquired    taste factory   rice lady calling  orders  ready appears     voice actor   upcoming unintelligible helium chihuahua power rangers release  tortillas  decent  everything else   bust", 
+    meta = list(author = character(0), datetimestamp = list(sec = 6.6805899143219, min = 37, hour = 6, mday = 4, mon = 4, year = 117, wday = 4, yday = 123, isdst = 0), description = character(0), heading = character(0), id = "1", language = "en", origin = character(0))))
+list()
+list(business_id = 1800, user_id = 64036)
+> 
+> test.tmcreviews = DocumentTermMatrix(test.creviews)
+> dim(test.tmcreviews)   # notice that we have one row for each user review, and one column for each word
+[1] 29118 37921
+> 
+> 
+> test.mcterms = test.tmcreviews[, shorttermlist]  # let's create another term matrix with just common words
+> dim(test.mcterms)   # notice now we have the same number of rows but only 1984 columns (just frequent words)
+[1] 29118  1298
+> test.wordcount=apply(test.mcterms,1,sum)   # count the number words in reviews (the '1' tells R to sum each row or user)
+> summary(test.wordcount)  # summary of the users
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+   0.00   17.00   29.00   38.32   49.00  346.00 
+> test.wordcount.index = test.wordcount>10
+> test.mcterms = test.mcterms[test.wordcount.index,]   # let's only keep user reviews that have at least 10 words
+> dim(test.mcterms)  
+[1] 26559  1298
+> b = test$stars[test.wordcount.index]
+> mcterms = as.matrix(mcterms)
+> mcterms = as.data.frame(mcterms)
+> mcterms = cbind(mcterms, b)
+Error in data.frame(..., check.names = FALSE) : 
+  arguments imply differing number of rows: 79985, 26559
+> dim(mcterms)
+[1] 79985  1299
+> test.mcterms = as.matrix(test.mcterms)
+> test.mcterms = as.data.frame(test.mcterms)
+> test.business_id = test$business_id[test.wordcount.index]
+> library(rpart)
+> library(caret)
+> rpart.model = rpart(factor(y) ~ ., data= mcterms)
+> rpart.pred = predict(rpart.model, test.mcterms, type = "class")
+> table(rpart.pred, test$stars[test.wordcount.index])
+          
+rpart.pred    1    2    3    4    5
+         1 2414 1119  916 1135 1132
+         2    0    0    0    0    0
+         3    0    0    0    0    0
+         4  705 1003 1719 2901 2064
+         5  478  670 1073 3303 5927
+> save.image("~/Desktop/154 Final Project/rpart.RData")
