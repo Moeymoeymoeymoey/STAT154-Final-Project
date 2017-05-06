@@ -1,7 +1,0 @@
-business.test = read.csv("yelp_academic_dataset_business_test.csv", header = TRUE)
-business.train = read.csv("yelp_academic_dataset_business_train.csv", header = TRUE)
-checkin = read.csv("yelp_academic_dataset_checkin.csv", header = TRUE)
-review.test = read.csv("yelp_academic_dataset_review_test.csv", header = TRUE)
-review.train = read.csv("yelp_academic_dataset_review_train.csv", header = TRUE)
-dataset.tip = read.csv("yelp_academic_dataset_tip.csv", header = TRUE)
-dataset.user = read.csv("yelp_academic_dataset_user.csv", header = TRUE)
